@@ -289,4 +289,92 @@
     )
 )
 
+;; --------------------------------------------------------------------------
+;; New Feature: Comprehensive User Report
+;; --------------------------------------------------------------------------
+
+;; Get a comprehensive report for a user suitable for frontend dashboards.
+;; This function aggregates all available data, projects future status,
+;; and provides actionable insights for the user to improve their score.
+;; It calculates potential decay, points needed for the next tier, and
+;; summarizes their engagement history in a single call.
+(define-public (get-comprehensive-user-report (user principal))
+    (let
+        (
+            ;; Fetch all necessary state
+            (stats (get-or-default-stats user))
+            (score-data (get-or-default-score user))
+            
+            (current-score (get score score-data))
+            (current-tier (get tier score-data))
+            (last-active (get last-active-block stats))
+            (streak (get consistency-streak stats))
+            
+            ;; Calculate projected decay if no action is taken for another interval
+            (projected-decay (calculate-decay (get last-updated score-data) current-score))
+            
+            ;; Determine points needed for next tier
+            ;; This requires nested logic to find the immediate next threshold
+            (next-tier-threshold 
+                (if (< current-score tier-silver-threshold) tier-silver-threshold
+                (if (< current-score tier-gold-threshold) tier-gold-threshold
+                (if (< current-score tier-platinum-threshold) tier-platinum-threshold
+                (if (< current-score tier-diamond-threshold) tier-diamond-threshold
+                u0)))) ;; u0 indicates max tier reached
+            )
+            
+            (points-to-next-tier 
+                (if (is-eq next-tier-threshold u0) 
+                    u0 
+                    (- next-tier-threshold current-score)
+                )
+            )
+            
+            ;; Calculate relative engagement (percentile-like logic simplified)
+            ;; Avoid division by zero
+            (total-users (var-get active-users-count))
+            (avg-interactions 
+                (if (> total-users u0) 
+                    (/ (var-get total-interactions) total-users) 
+                    u0
+                )
+            )
+            (user-total-interactions (+ (get total-votes stats) (get proposals-created stats)))
+            
+            (engagement-status 
+                (if (> user-total-interactions avg-interactions) 
+                    "Above Average" 
+                    "Average or Below"
+                )
+            )
+        )
+        (ok {
+            user-identity: user,
+            current-status: {
+                score: current-score,
+                tier: current-tier,
+                lifetime-peak: (get lifetime-score-peak score-data),
+                is-active: (< (- block-height last-active) u144)
+            },
+            activity-metrics: {
+                total-votes-cast: (get total-votes stats),
+                proposals-authored: (get proposals-created stats),
+                current-streak-length: streak,
+                unique-days-active: (get unique-interactions stats)
+            },
+            projections: {
+                potential-decay-penalty: projected-decay,
+                blocks-until-next-decay: (- decay-interval (mod (- block-height (get last-updated score-data)) decay-interval)),
+                points-required-for-upgrade: points-to-next-tier,
+                next-milestone: next-tier-threshold
+            },
+            comparative-analysis: {
+                global-average-interactions: avg-interactions,
+                user-interaction-count: user-total-interactions,
+                relative-standing: engagement-status
+            }
+        })
+    )
+)
+
 
